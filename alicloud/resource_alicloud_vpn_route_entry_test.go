@@ -3,6 +3,7 @@ package alicloud
 import (
 	"fmt"
 	"log"
+	// "strings"
 	"testing"
 	"time"
 
@@ -15,19 +16,16 @@ import (
 )
 
 func init() {
-	resource.AddTestSweepers("alicloud_vpn_route_entry", &resource.Sweeper{
+	resource.AddTestSweepers("alicloud_vpn_router_entry", &resource.Sweeper{
 		Name: "alicloud_vpn_router_entry",
 		F:    testSweepVPNRouterEntry,
-		Dependencies: []string{
-			"alicloud_vpn_gateway",
-		},
 	})
 }
 
 func testSweepVPNRouterEntry(region string) error {
 	rawClient, err := sharedClientForRegion(region)
 	if err != nil {
-		return fmt.Errorf("error getting Alicloud client: %s", err)
+		return WrapError(err)
 	}
 	client := rawClient.(*connectivity.AliyunClient)
 
@@ -39,39 +37,57 @@ func testSweepVPNRouterEntry(region string) error {
 	// 	"testAcc",
 	// }
 
-	var rns []vpc.VpnRouteEntry
-	req := vpc.CreateDescribeVpnRouteEntriesRequest()
-	req.RegionId = client.RegionId
-	req.PageSize = requests.NewInteger(PageSizeLarge)
-	req.PageNumber = requests.NewInteger(1)
+	var gws []vpc.VpnRouteEntry
+	request := vpc.CreateDescribeVpnRouteEntriesRequest()
+	request.RegionId = client.RegionId
+	request.PageSize = requests.NewInteger(PageSizeLarge)
+	request.PageNumber = requests.NewInteger(1)
 
 	for {
 		raw, err := client.WithVpcClient(func(vpcClient *vpc.Client) (interface{}, error) {
-			return vpcClient.DescribeVpnRouteEntries(req)
+			return vpcClient.DescribeVpnRouteEntries(request)
 		})
 		if err != nil {
-			log.Printf("[ERROR] Error retrieving VPN Route Entry: %s", err)
+			return WrapError(err)
 		}
-		resp, _ := raw.(*vpc.DescribeVpnRouteEntriesResponse)
-		if resp == nil || len(resp.VpnRouteEntries.VpnRouteEntry) < 1 {
+		addDebug(request.GetActionName(), raw)
+		response, _ := raw.(*vpc.DescribeVpnRouteEntriesResponse)
+		if len(response.VpnRouteEntries.VpnRouteEntry) < 1 {
 			break
 		}
-		rns = append(rns, resp.VpnRouteEntries.VpnRouteEntry...)
+		// gws = append(gws, response.VpnRouteEntries.VpnRouteEntry...)
+		gws = response.VpnRouteEntries.VpnRouteEntry
 
-		if len(resp.VpnRouteEntries.VpnRouteEntry) < PageSizeLarge {
+		if len(response.VpnRouteEntries.VpnRouteEntry) < PageSizeLarge {
 			break
 		}
 
-		if page, err := getNextpageNumber(req.PageNumber); err != nil {
-			return err
+		if page, err := getNextpageNumber(request.PageNumber); err != nil {
+			return WrapError(err)
 		} else {
-			req.PageNumber = page
+			request.PageNumber = page
 		}
 	}
 
-	for _, v := range rns {
+	sweeped := false
+	for _, v := range gws {
+		// name := v.Name
+		id := v.VpnInstanceId
+		// skip := true
+		// for _, prefix := range prefixes {
+		// 	if strings.HasPrefix(strings.ToLower(name), strings.ToLower(prefix)) {
+		// 		skip = false
+		// 		break
+		// 	}
+		// }
+		// if skip {
+		// 	log.Printf("[INFO] Skipping VPN route entry: %s (%s)", name, id)
+		// 	continue
+		// }
+		sweeped = true
+		log.Printf("[INFO] Deleting VPN route entry: (%s)", id)
 		req := vpc.CreateDeleteVpnRouteEntryRequest()
-		req.VpnGatewayId = v.VpnInstanceId
+		req.VpnGatewayId = id
 		req.RouteDest = v.RouteDest
 		req.NextHop = v.NextHop
 		req.Weight = requests.NewInteger(v.Weight)
@@ -80,12 +96,14 @@ func testSweepVPNRouterEntry(region string) error {
 			return vpcClient.DeleteVpnRouteEntry(req)
 		})
 		if err != nil {
-			log.Printf("[ERROR] Failed to delete VPN Route Entry (%s): %s", v.VpnInstanceId, err)
+			log.Printf("[ERROR] Failed to delete VPN route entry(%s): %s", id, err)
 		}
-
-		time.Sleep(10 * time.Second)
+	}
+	if sweeped {
+		time.Sleep(5 * time.Second)
 	}
 	return nil
+
 }
 
 func testAccCheckVpnRouteEntryDestroy(s *terraform.State) error {
@@ -98,7 +116,7 @@ func testAccCheckVpnRouteEntryDestroy(s *terraform.State) error {
 		}
 
 		fmt.Printf("rs: %v \t %[1]T\n\n\n", rs)
-		_, err := vpnRouteEntryService.DescribeVpnRouteEntry(rs.Primary.ID, "test")
+		_, err := vpnRouteEntryService.DescribeVpnRouteEntry(rs.Primary.ID)
 
 		if err != nil {
 			if NotFoundError(err) {
@@ -106,94 +124,23 @@ func testAccCheckVpnRouteEntryDestroy(s *terraform.State) error {
 			}
 			return WrapError(err)
 		}
-
-		// if instance != "" {
-		// 	return WrapError(Error("VPN %s still exist", instance.VpnGatewayId))
-		// }
 	}
 
 	return nil
 }
 
-func TestAccAlicloudVpnRouteEntryBasic(t *testing.T) {
-	var v vpc.DescribeVpnRouteEntriesResponse
+func TestAccAlicloudVpnRouteEntryMulti(t *testing.T) {
+	var v VpnState
 
 	resourceId := "alicloud_vpn_route_entry.default"
-	ra := resourceAttrInit(resourceId, testAccVpnGatewayCheckMap)
+	ra := resourceAttrInit(resourceId, nil)
 	serviceFunc := func() interface{} {
 		return &VpnRouteEntryService{testAccProvider.Meta().(*connectivity.AliyunClient)}
 	}
 	rc := resourceCheckInit(resourceId, &v, serviceFunc)
 	rac := resourceAttrCheckInit(rc, ra)
 	testAccCheck := rac.resourceAttrMapUpdateSet()
-	rand := acctest.RandIntRange(1000, 9999)
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccPreCheckWithAccountSiteType(t, IntlSite)
-		},
-
-		// module name
-		IDRefreshName: resourceId,
-		Providers:     testAccProviders,
-		CheckDestroy:  testAccCheckVpnRouteEntryDestroy,
-		Steps: []resource.TestStep{
-			// {
-			// 	Config: testAccVpnRouteEntryConfigBasic(rand),
-			// 	Check: resource.ComposeTestCheckFunc(
-			// 		testAccCheck(map[string]string{
-			// 			"route_dest": fmt.Sprintf("tf-testAccVpnRouteEntryConfig%d", rand),
-			// 		}),
-			// 	),
-			// },
-			{
-				ResourceName:      resourceId,
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
-			{
-				Config: testAccVpnRouteEntryConfigRouteDest(rand),
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheck(map[string]string{
-						"route_dest": fmt.Sprintf("12.0.0.%d", rand),
-					}),
-				),
-			},
-			{
-				Config: testAccVpnRouteEntryConfigWeight(rand),
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheck(map[string]string{
-						"weight": fmt.Sprintf("%d", 100),
-					}),
-				),
-			},
-
-			{
-				Config: testAccVpnRouteEntryConfigAll(rand),
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheck(map[string]string{
-						"publish_vpc": fmt.Sprintf("%t", false),
-						"description": fmt.Sprintf("tf-testAccVpnRouteEntryConfig%d", rand),
-						"weight":      fmt.Sprintf("%d", 0),
-					}),
-				),
-			},
-		},
-	})
-
-}
-
-func TestAccAlicloudVpnRouteEntryMulti(t *testing.T) {
-	var v vpc.DescribeVpcAttributeResponse
-	rand := acctest.RandInt()
-	resourceId := "alicloud_vpc.default.9"
-	ra := resourceAttrInit(resourceId, testAccCheckVpcCheckMap)
-	serviceFunc := func() interface{} {
-		return &VpcService{testAccProvider.Meta().(*connectivity.AliyunClient)}
-	}
-	rc := resourceCheckInit(resourceId, &v, serviceFunc)
-	rac := resourceAttrCheckInit(rc, ra)
-	testAccCheck := rac.resourceAttrMapUpdateSet()
+	rand := acctest.RandIntRange(100, 200)
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
@@ -215,159 +162,37 @@ func TestAccAlicloudVpnRouteEntryMulti(t *testing.T) {
 				),
 			},
 			{
-				Config: testAccVpnRouteEntryConfigDescription(rand),
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheck(map[string]string{
-						"description": fmt.Sprintf("tf-testAccVpnRouteEntryConfig%d", rand),
-					}),
-				),
-			},
-			{
-				Config: testAccVpnRouteEntryConfigPublishVpc(rand),
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheck(map[string]string{
-						"publish_vpc": fmt.Sprintf("%t", true),
-					}),
-				),
-			},
-			{
-				Config: testAccVpnRouteEntryConfigWeight(rand),
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheck(map[string]string{
-						"weight": fmt.Sprintf("%d", 100),
-					}),
-				),
+				ResourceName:      resourceId,
+				ImportState:       true,
+				ImportStateVerify: true,
 			},
 		},
 	})
 }
 
-func testAccVpnRouteEntryConfigWeight(rand int) string {
-	return fmt.Sprintf(`resource "alicloud_vpc" "default" {
-  name       = "tf-testAccVpnRouteEntryConfig%d"
-  cidr_block = "172.16.0.0/12"
-}
-
-resource "alicloud_vpn_gateway" "default" {
-  name       = "tf-testAccVpnRouteEntryConfig%[1]d"
-  vpc_id =  "${alicloud_vpc.default.id}"
-  bandwidth = 5
-  instance_charge_type = "PostPaid"
-}
-
-resource "alicloud_vpn_connection" "default" {
-  name = "tf-testAccVpnRouteEntryConfig%[1]d"
-  customer_gateway_id = "${alicloud_vpn_customer_gateway.default.id}"
-  vpn_gateway_id = "${alicloud_vpn_gateway.default.id}"
-  local_subnet = ["192.168.2.0/24"]
-  remote_subnet = ["192.168.3.0/24"]
-}
-
-resource "alicloud_vpn_customer_gateway" "default" {
-  name = "tf-testAccVpnRouteEntryConfig%[1]d"
-  ip_address = "192.168.1.1"
-}
-
-resource "alicloud_vpn_route_entry" "default" {
-  description       = ""
-  vpn_gateway_id = "${alicloud_vpn_gateway.default.id}"
-  route_dest = "12.0.0.2"
-  next_hop = "${alicloud_vpn_connection.default.id}"
-  weight =100
-  publish_vpc = false
-}`, rand)
-}
-
-func testAccVpnRouteEntryConfigDescription(rand int) string {
-	return fmt.Sprintf(`
-resource "alicloud_vpc" "default" {
-  name       = "tf-testAccVpnRouteEntryConfig%d"
-  cidr_block = "172.16.0.0/12"
-}
-
-resource "alicloud_vpn_gateway" "default" {
-  name       = "tf-testAccVpnRouteEntryConfig%[1]d"
-  vpc_id =  "${alicloud_vpc.default.id}"
-  bandwidth = 5
-  instance_charge_type = "PostPaid"
-}
-
-resource "alicloud_vpn_connection" "default" {
-  name = "tf-testAccVpnRouteEntryConfig%[1]d"
-  customer_gateway_id = "${alicloud_vpn_customer_gateway.default.id}"
-  vpn_gateway_id = "${alicloud_vpn_gateway.default.id}"
-  local_subnet = ["192.168.2.0/24"]
-  remote_subnet = ["192.168.3.0/24"]
-}
-
-resource "alicloud_vpn_customer_gateway" "default" {
-  name = "tf-testAccVpnRouteEntryConfig%[1]d"
-  ip_address = "192.168.1.1"
-}
-
-resource "alicloud_vpn_route_entry" "default" {
-  description       = "tf-testAccVpnRouteEntryConfig%[1]d"
-  vpn_gateway_id = "${alicloud_vpn_gateway.default.id}"
-  route_dest = "12.0.0.2"
-  next_hop = "${alicloud_vpn_connection.default.id}"
-  weight =100
-  publish_vpc = false
-}`, rand)
-}
-
-func testAccVpnRouteEntryConfigPublishVpc(rand int) string {
-	return fmt.Sprintf(`
-resource "alicloud_vpc" "default" {
-  name       = "tf-testAccVpnRouteEntryConfig%d"
-  cidr_block = "172.16.0.0/12"
-}
-
-resource "alicloud_vpn_gateway" "default" {
-  name       = "tf-testAccVpnRouteEntryConfig%[1]d"
-  vpc_id =  "${alicloud_vpc.default.id}"
-  bandwidth = 5
-  instance_charge_type = "PostPaid"
-}
-
-resource "alicloud_vpn_connection" "default" {
-  name = "tf-testAccVpnRouteEntryConfig%[1]d"
-  customer_gateway_id = "${alicloud_vpn_customer_gateway.default.id}"
-  vpn_gateway_id = "${alicloud_vpn_gateway.default.id}"
-  local_subnet = ["192.168.2.0/24"]
-  remote_subnet = ["192.168.3.0/24"]
-}
-
-resource "alicloud_vpn_customer_gateway" "default" {
-  name = "tf-testAccVpnRouteEntryConfig%[1]d"
-  ip_address = "192.168.1.1"
-}
-
-resource "alicloud_vpn_route_entry" "default" {
-  description       = ""
-  vpn_gateway_id = "${alicloud_vpn_gateway.default.id}"
-  route_dest = "12.0.0.2"
-  next_hop = "${alicloud_vpn_connection.default.id}"
-  weight =0
-  publish_vpc = true
-}`, rand)
-}
-
 func testAccVpnRouteEntryConfigAll(rand int) string {
 	return fmt.Sprintf(`
 resource "alicloud_vpc" "default" {
-  name       = "tf-testAccVpnRouteEntryConfig%d"
+  name       = "tf-testAccVpnRouteEntryConfig"
   cidr_block = "172.16.0.0/12"
 }
 
+resource "alicloud_vswitch" "default" {
+  vpc_id            = "${alicloud_vpc.default.id}"
+  cidr_block        = "172.16.1.0/24"
+  availability_zone = "cn-beijing-c"
+}
+
 resource "alicloud_vpn_gateway" "default" {
-  name       = "tf-testAccVpnRouteEntryConfig%[1]d"
+  name       = "tf-testAccVpnRouteEntryConfig"
   vpc_id =  "${alicloud_vpc.default.id}"
-  bandwidth = 5
+  bandwidth = 10
   instance_charge_type = "PostPaid"
+  enable_ssl = false
 }
 
 resource "alicloud_vpn_connection" "default" {
-  name = "tf-testAccVpnRouteEntryConfig%[1]d"
+  name = "tf-testAccVpnRouteEntryConfig"
   customer_gateway_id = "${alicloud_vpn_customer_gateway.default.id}"
   vpn_gateway_id = "${alicloud_vpn_gateway.default.id}"
   local_subnet = ["192.168.2.0/24"]
@@ -375,25 +200,26 @@ resource "alicloud_vpn_connection" "default" {
 }
 
 resource "alicloud_vpn_customer_gateway" "default" {
-  name = "tf-testAccVpnRouteEntryConfig%[1]d"
+  name = "tf-testAccVpnRouteEntryConfig"
   ip_address = "192.168.1.1"
 }
 
 resource "alicloud_vpn_route_entry" "default" {
-  description       = "tf-testAccVpnRouteEntryConfig%[1]d"
+  description       = "tf-testAccVpnRouteEntryConfig%d"
   vpn_gateway_id = "${alicloud_vpn_gateway.default.id}"
-  route_dest = "12.0.0.2"
+  route_dest = "12.0.0.2/32"
   next_hop = "${alicloud_vpn_connection.default.id}"
-  weight =0
-  publish_vpc = false
-}`, rand)
+  weight =100
+  publish_vpc = true
+}
+`, rand)
 }
 
-var testAccVpnRoutrEntryCheckMap = map[string]string{
-	"vpn_gateway_id": CHECKSET,
-	"next_hop":       CHECKSET,
-	"route_dest":     "12.0.0.2",
-	"weight":         "0",
-	"publish_vpc":    "false",
-	"description":    "",
-}
+// var testAccVpnRoutrEntryCheckMap = map[string]string{
+// 	"vpn_gateway_id": CHECKSET,
+// 	"next_hop":       CHECKSET,
+// 	"route_dest":     "12.0.0.2/32",
+// 	"weight":         "0",
+// 	"publish_vpc":    "false",
+// 	"description":    "",
+// }

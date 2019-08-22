@@ -15,16 +15,22 @@ type VpnRouteEntryService struct {
 }
 
 type VpnState struct {
-	State      string
-	CreateTime int64
-	Status     Status
+	State        string
+	CreateTime   int64
+	Status       Status
+	VpnGatewayId string
+	RouteDest    string
+	NextHop      string
+	Weight       int
+	PublishVpc   string
 }
 
-// id is rebuild as "requestId + nexthop+route_dest "
-func (s *VpnRouteEntryService) DescribeVpnRouteEntry(id string, gatewayId string) (v VpnState, err error) {
+func (s *VpnRouteEntryService) DescribeVpnRouteEntry(ids string) (v VpnState, err error) {
 	request := vpc.CreateDescribeVpnRouteEntriesRequest()
-	// d := strings.Split(id, "+")
-	// gatewayId, nextHop, routeDest := idSplit(id)
+
+	a := strings.Split(ids, ":")
+	gatewayId := a[0]
+	id := a[1]
 	request.VpnGatewayId = gatewayId
 
 	raw, err := s.client.WithVpcClient(func(vpcClient *vpc.Client) (interface{}, error) {
@@ -40,18 +46,29 @@ func (s *VpnRouteEntryService) DescribeVpnRouteEntry(id string, gatewayId string
 	response, _ := raw.(*vpc.DescribeVpnRouteEntriesResponse)
 
 	for _, resp := range response.VpnRouteEntries.VpnRouteEntry {
-		i := gatewayId + resp.NextHop + resp.RouteDest
+		i := gatewayId + ":" + resp.NextHop + resp.RouteDest
+
 		if id == getMd5FromStr(i) {
-			return VpnState{resp.State, resp.CreateTime, Active}, nil
+			data := VpnState{
+				resp.State,
+				resp.CreateTime,
+				Active,
+				resp.VpnInstanceId,
+				resp.RouteDest,
+				resp.NextHop,
+				resp.Weight,
+				resp.State,
+			}
+			return data, nil
 		}
 	}
 	return v, WrapErrorf(Error(GetNotFoundMessage("VpnRouterEntry", gatewayId)), NotFoundMsg, ProviderERROR)
 }
 
-func (s *VpnRouteEntryService) WaitForVpnRouteEntry(id string, gatewayId string, status Status, timeout int) error {
+func (s *VpnRouteEntryService) WaitForVpnRouteEntry(ids string, status Status, timeout int) error {
 	deadline := time.Now().Add(time.Duration(timeout) * time.Second)
 	for {
-		object, err := s.DescribeVpnRouteEntry(id, gatewayId)
+		object, err := s.DescribeVpnRouteEntry(ids)
 		if err != nil {
 			if NotFoundError(err) {
 				if status == Deleted {
@@ -66,7 +83,7 @@ func (s *VpnRouteEntryService) WaitForVpnRouteEntry(id string, gatewayId string,
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return WrapErrorf(err, WaitTimeoutMsg, gatewayId, GetFunc(1), timeout, object.Status, string(status), ProviderERROR)
+			return WrapErrorf(err, WaitTimeoutMsg, ids, GetFunc(1), timeout, object.Status, string(status), ProviderERROR)
 		}
 		time.Sleep(DefaultIntervalShort * time.Second)
 	}
@@ -78,3 +95,8 @@ func getMd5FromStr(str string) string {
 	Result := Md5Inst.Sum([]byte(""))
 	return fmt.Sprintf("%x", Result)
 }
+
+// func split(str string) (string, string) {
+// 	ids := strings.Split(str, ":")
+// 	return ids[0], ids[1]
+// }

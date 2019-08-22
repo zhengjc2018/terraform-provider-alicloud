@@ -3,6 +3,12 @@ resource "alicloud_vpc" "default" {
   cidr_block = "${var.vpc_cidr}"
 }
 
+resource "alicloud_vswitch" "default" {
+  vpc_id            = "${alicloud_vpc.default.id}"
+  cidr_block        = "${var.cidr_blocks}"
+  availability_zone = "${var.availability_zones}"
+}
+
 resource "alicloud_vpn_gateway" "default" {
   name       = "tf_vpn_gateway_test"
   vpc_id =  "${alicloud_vpc.default.id}"
