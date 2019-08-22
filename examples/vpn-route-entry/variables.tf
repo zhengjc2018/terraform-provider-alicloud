@@ -3,9 +3,17 @@ variable "vpc_cidr" {
   default = "10.1.0.0/21"
 }
 
+variable "availability_zones" {
+  default = "cn-beijing-c"
+}
+
+variable "cidr_blocks" {
+  default = "10.1.1.0/24"
+}
+
 // default vpn gateway variables
 variable "bandwidth" {
-  default = 5
+  default = 10
 }
 
 variable "instance_type" {
