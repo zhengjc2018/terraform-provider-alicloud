@@ -48,7 +48,7 @@ func (s *VpnRouteEntryService) DescribeVpnRouteEntry(ids string) (v VpnState, er
 	for _, resp := range response.VpnRouteEntries.VpnRouteEntry {
 		i := gatewayId + ":" + resp.NextHop + resp.RouteDest
 
-		if id == getMd5FromStr(i) {
+		if ids == i {
 			data := VpnState{
 				resp.State,
 				resp.CreateTime,
@@ -89,14 +89,9 @@ func (s *VpnRouteEntryService) WaitForVpnRouteEntry(ids string, status Status, t
 	}
 }
 
-func getMd5FromStr(str string) string {
-	Md5Inst := md5.New()
-	Md5Inst.Write([]byte(str))
-	Result := Md5Inst.Sum([]byte(""))
-	return fmt.Sprintf("%x", Result)
-}
-
-// func split(str string) (string, string) {
-// 	ids := strings.Split(str, ":")
-// 	return ids[0], ids[1]
+// func getMd5FromStr(str string) string {
+// 	Md5Inst := md5.New()
+// 	Md5Inst.Write([]byte(str))
+// 	Result := Md5Inst.Sum([]byte(""))
+// 	return fmt.Sprintf("%x", Result)
 // }

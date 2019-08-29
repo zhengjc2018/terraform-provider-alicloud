@@ -3,7 +3,7 @@ package alicloud
 import (
 	"fmt"
 	"log"
-	// "strings"
+
 	"testing"
 	"time"
 
@@ -29,14 +29,6 @@ func testSweepVPNRouterEntry(region string) error {
 	}
 	client := rawClient.(*connectivity.AliyunClient)
 
-	// prefixes := []string{
-	// 	"tf-testAcc",
-	// 	"tf_testAcc",
-	// 	"tf_test_",
-	// 	"tf-test-",
-	// 	"testAcc",
-	// }
-
 	var gws []vpc.VpnRouteEntry
 	request := vpc.CreateDescribeVpnRouteEntriesRequest()
 	request.RegionId = client.RegionId
@@ -55,7 +47,6 @@ func testSweepVPNRouterEntry(region string) error {
 		if len(response.VpnRouteEntries.VpnRouteEntry) < 1 {
 			break
 		}
-		// gws = append(gws, response.VpnRouteEntries.VpnRouteEntry...)
 		gws = response.VpnRouteEntries.VpnRouteEntry
 
 		if len(response.VpnRouteEntries.VpnRouteEntry) < PageSizeLarge {
@@ -71,19 +62,8 @@ func testSweepVPNRouterEntry(region string) error {
 
 	sweeped := false
 	for _, v := range gws {
-		// name := v.Name
 		id := v.VpnInstanceId
-		// skip := true
-		// for _, prefix := range prefixes {
-		// 	if strings.HasPrefix(strings.ToLower(name), strings.ToLower(prefix)) {
-		// 		skip = false
-		// 		break
-		// 	}
-		// }
-		// if skip {
-		// 	log.Printf("[INFO] Skipping VPN route entry: %s (%s)", name, id)
-		// 	continue
-		// }
+
 		sweeped = true
 		log.Printf("[INFO] Deleting VPN route entry: (%s)", id)
 		req := vpc.CreateDeleteVpnRouteEntryRequest()
@@ -161,11 +141,6 @@ func TestAccAlicloudVpnRouteEntryMulti(t *testing.T) {
 					}),
 				),
 			},
-			{
-				ResourceName:      resourceId,
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
 		},
 	})
 }
@@ -180,7 +155,7 @@ resource "alicloud_vpc" "default" {
 resource "alicloud_vswitch" "default" {
   vpc_id            = "${alicloud_vpc.default.id}"
   cidr_block        = "172.16.1.0/24"
-  availability_zone = "cn-beijing-c"
+  availability_zone = "cn-hangzhou-b"
 }
 
 resource "alicloud_vpn_gateway" "default" {
@@ -214,12 +189,3 @@ resource "alicloud_vpn_route_entry" "default" {
 }
 `, rand)
 }
-
-// var testAccVpnRoutrEntryCheckMap = map[string]string{
-// 	"vpn_gateway_id": CHECKSET,
-// 	"next_hop":       CHECKSET,
-// 	"route_dest":     "12.0.0.2/32",
-// 	"weight":         "0",
-// 	"publish_vpc":    "false",
-// 	"description":    "",
-// }

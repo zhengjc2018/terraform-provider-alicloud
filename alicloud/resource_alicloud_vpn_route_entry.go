@@ -106,7 +106,6 @@ func resourceAliyunVpnRouteEntryCreate(d *schema.ResourceData, meta interface{})
 		return vpcClient.CreateVpnRouteEntry(request)
 	})
 
-	fmt.Printf("err is:%v \t raw is %v\n", err, raw)
 	if err != nil {
 		return WrapErrorf(err, DefaultErrorMsg, "alicloud_vpn_route_entry", request.GetActionName(), AlibabaCloudSdkGoERROR)
 	}
@@ -114,8 +113,6 @@ func resourceAliyunVpnRouteEntryCreate(d *schema.ResourceData, meta interface{})
 	response, _ := raw.(*vpc.CreateVpnRouteEntryResponse)
 
 	id := response.VpnInstanceId + ":" + response.NextHop + response.RouteDest
-	// gatewayId := d.Get("vpn_gateway_id").(string)
-	// d.SetId(gatewayId + ":" + getMd5FromStr(id))
 	d.SetId(id)
 	d.Set("old_weight", d.Get("weight").(int))
 
@@ -140,7 +137,6 @@ func resourceAliyunVpnRouteEntryRead(d *schema.ResourceData, meta interface{}) e
 		return WrapError(err)
 	}
 
-	fmt.Printf("read is done")
 	d.Set("create_time", object.CreateTime)
 	d.Set("state", object.State)
 	return nil
@@ -206,8 +202,6 @@ func resourceAliyunVpnRouteEntryUpdate(d *schema.ResourceData, meta interface{})
 	}
 
 	d.Partial(false)
-	fmt.Printf("update is done")
-
 	return resourceAliyunVpnRouteEntryRead(d, meta)
 
 }
@@ -223,7 +217,6 @@ func resourceAliyunVpnRouteEntryDelete(d *schema.ResourceData, meta interface{})
 	request.Weight = requests.NewInteger(d.Get("weight").(int))
 
 	request.ClientToken = buildClientToken(request.GetActionName())
-	fmt.Printf("delete start")
 
 	err := resource.Retry(5*time.Minute, func() *resource.RetryError {
 		args := *request
