@@ -3,7 +3,6 @@ package alicloud
 import (
 	"fmt"
 	"log"
-
 	"testing"
 	"time"
 
