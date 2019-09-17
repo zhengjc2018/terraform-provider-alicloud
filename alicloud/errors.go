@@ -357,6 +357,11 @@ const (
 	//Actiontrail
 	InvalidTrailNotFound  = "TrailNotFoundException"
 	TrailNeedRamAuthorize = "NeedRamAuthorize"
+
+	//Bgp
+	BgpNotFound      = "InvalidRegionId.NotFound"
+	BgpInternalError = "InternalError"
+	BgpInvalidStatus = "InvalidStatus.CannotOperate"
 )
 
 var SlbIsBusy = []string{"SystemBusy", "OperationBusy", "ServiceIsStopping", "BackendServer.configuring", "ServiceIsConfiguring"}

@@ -356,6 +356,9 @@ func Provider() terraform.ResourceProvider {
 			"alicloud_network_acl":                         resourceAliyunNetworkAcl(),
 			"alicloud_network_acl_attachment":              resourceAliyunNetworkAclAttachment(),
 			"alicloud_network_acl_entries":                 resourceAliyunNetworkAclEntries(),
+			"alicloud_bgp_network":                         resourceAliyunBgpNetwork(),
+			"alicloud_bgp_group":                           resourceAliyunBgpGroup(),
+			"alicloud_bgp_peer":                            resourceAliyunBgpPeer(),
 		},
 
 		ConfigureFunc: providerConfigure,
